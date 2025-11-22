@@ -1,12 +1,27 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
 from .Mesh import Mesh
-from .mqtt_handler import MeshCommand, MeshStatus
+
+
+@dataclass
+class MeshCommand:
+    """Command to be sent to mesh"""
+
+    data: dict
+
+
+@dataclass
+class MeshStatus:
+    """Status update from the mesh"""
+
+    data: dict
+
 
 logger = logging.getLogger(__name__)
 BLE_RETRY_INTERVAL = 10

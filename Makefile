@@ -30,7 +30,7 @@ test:
 	pytest
 
 test-cov:
-	pytest --cov=avionmqtt --cov-report=html --cov-report=term
+	pytest --cov=avionmesh --cov-report=html --cov-report=term
 	@echo "Coverage report generated in htmlcov/index.html"
 
 test-fast:
