@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "avionmqtt"
-version = "2.0.4"
-description = "Bridge Avion Bluetooth mesh lights to MQTT/Home Assistant"
+name = "avionmesh"
+version = "2.0.5"
+description = "Libary for integrating with Avion Bluetooth mesh lights"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "LGPL-3.0-or-later"}
@@ -19,7 +19,6 @@ keywords = [
     "avion",
     "bluetooth",
     "mesh",
-    "mqtt",
     "home-assistant",
     "smart-home",
     "iot",
@@ -36,12 +35,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "aiohttp>=3.7",
-    "aiomqtt>=2.0.0",
     "aiorun>=2022.11.1",
     "bleak>=0.21.0",
     "pycryptodomex>=3.23.0",
-    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -64,13 +60,12 @@ test = [
 ]
 
 [project.scripts]
-avionmqtt = "avionmqtt.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/oyvindkinsey/avionmqtt"
-Repository = "https://github.com/oyvindkinsey/avionmqtt"
-Issues = "https://github.com/oyvindkinsey/avionmqtt/issues"
-Documentation = "https://github.com/oyvindkinsey/avionmqtt/blob/main/README.md"
+Homepage = "https://github.com/oyvindkinsey/avionmesh"
+Repository = "https://github.com/oyvindkinsey/avionmesh"
+Issues = "https://github.com/oyvindkinsey/avionmesh/issues"
+Documentation = "https://github.com/oyvindkinsey/avionmesh/blob/main/README.md"
 
 # ============================================================================
 # Tool configurations
@@ -81,7 +76,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["avionmqtt*"]
+include = ["avionmesh*"]
 exclude = ["tests*"]
 
 # ============================================================================
@@ -137,7 +132,7 @@ addopts = [
     "--strict-config",        # Treat config errors as errors
     "--showlocals",          # Show local variables in tracebacks
     "--tb=short",            # Shorter traceback format
-    "--cov=avionmqtt",       # Coverage for main package
+    "--cov=avionmesh",       # Coverage for main package
     "--cov-report=term-missing",  # Show missing lines in terminal
     "--cov-report=html",     # Generate HTML coverage report
     "--cov-report=xml",      # Generate XML coverage for CI
@@ -154,7 +149,7 @@ markers = [
 
 # Coverage settings
 [tool.coverage.run]
-source = ["src/avionmqtt"]
+source = ["src/avionmesh"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

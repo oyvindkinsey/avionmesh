@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 from bleak import BleakClient
 
-from avionmqtt.Mesh import Mesh, _get_date_packet, _get_time_packet
+from avionmesh.Mesh import Mesh, _get_date_packet, _get_time_packet
 
 
 class TestCreateMeshPackets:

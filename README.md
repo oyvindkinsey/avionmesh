@@ -1,6 +1,8 @@
-# avionmqtt
+# avionmesh
 
-A python library to bridge between Avi-on based lights and Home Assistant using MQTT
+A python library to for interacting with Avi-on based lights
+
+Forked from the original <https://github.com/oyvindkinsey/avionmqtt> repository, which will contain only the mqtt bits moving forward.
 
 ## support
 
@@ -8,76 +10,18 @@ This should support any devices that uses Avi-on's technology, including Halo Ho
 
 ## features
 
-- creates lights for devices and groups in Home Assistant
-  - supports creating meta lights such as for 'all', usefull for automation of color temperature
-- supports changing brightness and color temperature
-  - for:
-    - individidual devices
-    - groups
-    - the entire mesh at once
+- connects to the mesh using BLE
+- support getting and setting color temperature (kelvin)
   - color temperature can be set *without* turning on the light
-- polls the whole network on startup to get the current state of each device
-- updates Home Assistant whenever devices are updated externally
-
-## how to use
-
-```bash
-# if bluepy fails to compile, try installing libglib2.0-dev first (apt-get install libglib2.0-dev)
-pip install avionmqtt
-avionmqtt -s settings.yaml --log=INFO
-```
-
-## service install script
-
- See [Running as a service.md](resources/Running%20as%20a%20service.md) for how to install this as a service using systemd.
-
-## settings.yaml
-
-```yaml
-avion:
-    email: email@example.com
-    password: ********
-
-mqtt:
-    host: mqtt_broker.local
-    username: avion
-    password: avion
-
-devices:
-    import: true
-    # If set, include only these pids when importing devices
-    include:
-      - abcde...
-      - bcdef...
-    # If set, exclude these pids when importing devices
-    exclude:
-      - abcde...
-      - bcdef...
-    # If set, automatically adds all devices part of a group to the exclude list
-    exclude_in_group: true
-
-groups:
-    import: true
-    include:
-    exclude:
-
-# Controls if a single device, or one per light is created. Defaults to false.
-single_device: true
-
-# If you need to add additional overrides to dimmable or color_temp capabilities, then you can do so here.
-# If new products are discovered to work with this library, create an issue on github so that it can be added in.
-capabilities_overrides:
-  dimming:
-    - 123
-    - 234
-  color_temp:
-    - 123
-```
+- supports getting and setting brightness
+- supports managing both individual lights, groups, as well as the entire mesh at once
+- supports sending date/time updates to the mesh
+- supports polling for the state of the mesh
 
 ## acknowledgements
 
 This project would not have been possible without the original work done in <https://github.com/nkaminski/csrmesh> and <https://github.com/nayaverdier/halohome>
 
-## License
+## license
 
 This project is licensed under the GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later). See the `LICENSE` file for the full license text and details.
