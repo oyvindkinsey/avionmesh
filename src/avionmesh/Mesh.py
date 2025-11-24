@@ -282,6 +282,9 @@ class Mesh:
 
             logger.info("Subscribed to mesh notifications")
 
+            logger.info("Performing initial read of all devices")
+            await self.read_all()
+
             # Keep the subscription alive
             while self._mesh.is_connected:
                 await asyncio.sleep(1)
