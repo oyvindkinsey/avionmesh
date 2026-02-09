@@ -6,15 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from bleak import BleakClient
-from bleak.backends.characteristic import BleakGATTCharacteristic
-
-from .csrmeshcrypto import decrypt_packet, generate_key, make_packet, random_seq
+from recsrmesh import CSRMesh
+from recsrmesh.mcp import MODEL_OPCODE
 
 logger = logging.getLogger(__name__)
-
-CHARACTERISTIC_LOW = "c4edc000-9daf-11e3-8003-00025b000b00"
-CHARACTERISTIC_HIGH = "c4edc000-9daf-11e3-8004-00025b000b00"
 
 CAPABILITIES = {"dimming": {0, 90, 93, 94, 97, 134, 137, 162}, "color_temp": {0, 93, 134, 137, 162}}
 PRODUCT_NAMES = {
@@ -132,46 +127,21 @@ def _parse_data(target_id: int, data: bytes) -> Optional[dict]:
     return None
 
 
-# BLEBridge.decryptMessage
-def _parse_command(source: int, data: bytes):
-    hex = "-".join(map(lambda b: format(b, "01x"), data))
-    logger.info(f"mesh: parsing notification {hex}")
-    if data[2] == 0x73:
-        if data[0] == 0x0 and data[1] == 0x80:
-            return _parse_data(source, data[3:])
-        else:
-            return _parse_data(int.from_bytes(bytes([data[1], data[0]]), byteorder="big"), data[3:])
-    else:
-        logger.warning(f"Unable to handle {data[2]}")
-
-
-def _create_packet(target_id: int, verb: Verb, noun: Noun, value_bytes: bytes) -> bytes:
+def _create_packet(target_id: int, verb: Verb, noun: Noun, value_bytes: bytes) -> tuple[int, bytes]:
+    """Returns (dest_id, avi-on payload) for use with CSRMesh.send()."""
     if target_id < 32896:
         group_id = target_id
-        target_id = 0
+        dest_id = 0
     else:
         group_id = 0
+        dest_id = target_id
 
-    target_bytes = bytearray(target_id.to_bytes(2, byteorder="big"))
-    group_bytes = bytearray(group_id.to_bytes(2, byteorder="big"))
-    return bytes(
-        [
-            target_bytes[1],
-            target_bytes[0],
-            0x73,
-            verb.value,
-            noun.value,
-            group_bytes[0],
-            group_bytes[1],
-            0,  # id
-            *value_bytes,
-            0,
-            0,
-        ]
-    )
+    group_bytes = group_id.to_bytes(2, byteorder="big")
+    payload = bytes([verb.value, noun.value, group_bytes[0], group_bytes[1], 0, *value_bytes, 0, 0])
+    return dest_id, payload
 
 
-def _get_color_temp_packet(target_id: int, color: int) -> bytes:
+def _get_color_temp_packet(target_id: int, color: int) -> tuple[int, bytes]:
     return _create_packet(
         target_id,
         Verb.WRITE,
@@ -180,39 +150,16 @@ def _get_color_temp_packet(target_id: int, color: int) -> bytes:
     )
 
 
-def _get_brightness_packet(target_id: int, brightness: int) -> bytes:
+def _get_brightness_packet(target_id: int, brightness: int) -> tuple[int, bytes]:
     return _create_packet(target_id, Verb.WRITE, Noun.DIMMING, bytes([brightness, 0, 0]))
 
 
-def _get_date_packet(year: int, month: int, day: int) -> bytes:
-    year -= 2000
-    return _create_packet(
-        0,
-        Verb.WRITE,
-        Noun.DATE,
-        bytearray(
-            [
-                year,
-                month,
-                day,
-            ]
-        ),
-    )
+def _get_date_packet(year: int, month: int, day: int) -> tuple[int, bytes]:
+    return _create_packet(0, Verb.WRITE, Noun.DATE, bytearray([year - 2000, month, day]))
 
 
-def _get_time_packet(hour: int, minute: int, seconds: int) -> bytes:
-    return _create_packet(
-        0,
-        Verb.WRITE,
-        Noun.TIME,
-        bytearray(
-            [
-                hour,
-                minute,
-                seconds,
-            ]
-        ),
-    )
+def _get_time_packet(hour: int, minute: int, seconds: int) -> tuple[int, bytes]:
+    return _create_packet(0, Verb.WRITE, Noun.TIME, bytearray([hour, minute, seconds]))
 
 
 def apply_overrides_from_settings(settings: dict):
@@ -229,101 +176,58 @@ def apply_overrides_from_settings(settings: dict):
 
 
 class Mesh:
-    def __init__(self, mesh: BleakClient, passphrase: str) -> None:
-        super().__init__()
-        self._mesh = mesh
-        self._key = generate_key(passphrase.encode("ascii") + b"\x00\x4d\x43\x50")
+    def __init__(self, csr: CSRMesh) -> None:
+        self._csr = csr
         self._notification_callback: Optional[Callable] = None
-        # Track dimming commands for rapid dimming detection
-        self._dimming_commands: dict[
-            int, tuple[int, float]
-        ] = {}  # target_id -> (brightness, timestamp)
-
-    async def _write_gatt(self, packet: bytes) -> bool:
-        hex = "-".join(map(lambda b: format(b, "02x"), packet))
-        logger.debug(f"Writing to gatt: {hex}")
-
-        csrpacket = make_packet(self._key, random_seq(), packet)
-        low = csrpacket[:20]
-        high = csrpacket[20:]
-        await self._mesh.write_gatt_char(CHARACTERISTIC_LOW, low)
-        await self._mesh.write_gatt_char(CHARACTERISTIC_HIGH, high)
-        return True
+        # target_id -> (brightness, timestamp)
+        self._dimming_commands: dict[int, tuple[int, float]] = {}
 
     async def read_all(self):
-        packet = _create_packet(0, Verb.READ, Noun.DIMMING, bytearray(3))
-        await self._write_gatt(packet)
+        dest_id, payload = _create_packet(0, Verb.READ, Noun.DIMMING, bytearray(3))
+        await self._csr.send(dest_id, MODEL_OPCODE, payload)
 
     async def set_network_time(self):
         now = datetime.now()
-        await self._write_gatt(_get_date_packet(now.year, now.month, now.day))
+        dest_id, payload = _get_date_packet(now.year, now.month, now.day)
+        await self._csr.send(dest_id, MODEL_OPCODE, payload)
         await asyncio.sleep(3)
         now = datetime.now()
-        await self._write_gatt(_get_time_packet(now.hour, now.minute, now.second))
+        dest_id, payload = _get_time_packet(now.hour, now.minute, now.second)
+        await self._csr.send(dest_id, MODEL_OPCODE, payload)
 
     async def subscribe(self, callback: Callable[[dict], Any]):
-        """
-        Subscribe to mesh status updates.
-
-        This method now accepts an async callback that will be called
-        for each status update from the mesh. The callback should accept
-        a dict and can be async.
-
-        Args:
-            callback: Async function to call with status updates.
-                     Signature: async def callback(status_data: dict)
-        """
         self._notification_callback = callback
+        await self.read_all()
+        while self._csr.client.is_connected:
+            resp = await self._csr.recv(timeout=1.0)
+            if resp is not None:
+                self._process_response(resp)
 
-        try:
-            # Start notifications on the RX characteristic
-            await self._mesh.start_notify(CHARACTERISTIC_LOW, self._handle_notification)
-            await self._mesh.start_notify(CHARACTERISTIC_HIGH, self._handle_notification)
-
-            logger.info("Subscribed to mesh notifications")
-
-            logger.info("Performing initial read of all devices")
-            await self.read_all()
-
-            # Keep the subscription alive
-            while self._mesh.is_connected:
-                await asyncio.sleep(1)
-
-        except Exception as e:
-            logger.error(f"Error in mesh subscription: {e}")
-            raise
-        finally:
-            # Stop notifications on cleanup
-            if self._mesh.is_connected:
-                try:
-                    await self._mesh.stop_notify(CHARACTERISTIC_LOW)
-                    await self._mesh.stop_notify(CHARACTERISTIC_HIGH)
-                except Exception as e:
-                    logger.warning(f"Error stopping notifications: {e}")
+    def _process_response(self, resp: dict):
+        if resp["opcode"] != MODEL_OPCODE:
+            return
+        # Broadcast responses (source=0x8000) use crypto_source as device ID
+        device_id = resp["crypto_source"] if resp["source"] == 0x8000 else resp["source"]
+        parsed = _parse_data(device_id, resp["payload"])
+        if not parsed:
+            return
+        if "brightness" in parsed:
+            rapid = self._check_rapid_dimming(parsed["avid"], parsed["brightness"])
+            if rapid is not None:
+                asyncio.create_task(self._send_brightness_async(parsed["avid"], rapid))
+                return
+        if self._notification_callback:
+            asyncio.create_task(self._notification_callback(parsed))
 
     def _check_rapid_dimming(self, target_id: int, brightness: int) -> Optional[int]:
-        """
-        Check if this is a rapid dimming command (within 750ms of the previous command).
-        If it is, determine if commands are incrementing or decrementing and return
-        the appropriate brightness value (5 for decrementing, 255 for incrementing).
-
-        Args:
-            target_id: Target device ID
-            brightness: New brightness value
-
-        Returns:
-            Brightness value to use (0, 255, or None if not a rapid dimming scenario)
-        """
         current_time = time.time()
 
         if target_id in self._dimming_commands:
             prev_brightness, prev_time = self._dimming_commands[target_id]
-            time_diff = (current_time - prev_time) * 1000  # Convert to milliseconds
+            time_diff = (current_time - prev_time) * 1000
 
             if time_diff < 750:
-                # This is a rapid dimming command
                 if brightness == prev_brightness:
-                    # Same value - not a valid rapid dimming sequence
                     logger.debug(
                         f"Rapid commands but same brightness ({brightness}) for target_id {target_id}, ignoring"
                     )
@@ -335,87 +239,24 @@ class Mesh:
                     f"{prev_brightness} -> {brightness} ({time_diff:.0f}ms), "
                     f"direction: {'incrementing' if is_incrementing else 'decrementing'}"
                 )
-                # Return 255 for incrementing, 5 for decrementing
                 final_brightness = 255 if is_incrementing else 5
-                # Clear the command history since we're processing it
                 del self._dimming_commands[target_id]
                 return final_brightness
 
-        # Store this command for next check
         self._dimming_commands[target_id] = (brightness, current_time)
         return None
 
-    def _handle_notification(self, charactheristic: BleakGATTCharacteristic, data: bytearray):
-        """
-        Handle incoming BLE notifications from the mesh.
-        This is called synchronously by Bleak, so we need to schedule
-        the async callback properly.
-
-        Args:
-            sender: Characteristic handle
-            data: Raw notification data
-        """
-        try:
-            if charactheristic.uuid == CHARACTERISTIC_LOW:
-                self._low_bytes = data
-            elif charactheristic.uuid == CHARACTERISTIC_HIGH:
-                encrypted = bytes([*self._low_bytes, *data])
-                decoded = decrypt_packet(self._key, encrypted)
-                parsed = _parse_command(decoded["source"], decoded["decpayload"])
-                if parsed:
-                    # Check for rapid dimming if this is a brightness command
-                    if "brightness" in parsed:
-                        rapid_dimming_result = self._check_rapid_dimming(
-                            parsed["avid"], parsed["brightness"]
-                        )
-
-                        if rapid_dimming_result is not None:
-                            # Rapid dimming detected, send the extreme brightness value
-                            logger.info(
-                                f"mesh: Sending rapid dimming brightness {rapid_dimming_result}"
-                            )
-                            asyncio.create_task(
-                                self._send_brightness_async(parsed["avid"], rapid_dimming_result)
-                            )
-                            return
-
-                    # No rapid dimming, proceed with normal notification
-                    if self._notification_callback:
-                        # Schedule the async callback
-                        asyncio.create_task(self._notification_callback(parsed))
-
-        except Exception as e:
-            logger.error(f"Error handling notification: {e}")
-
     async def _send_brightness_async(self, target_id: int, brightness: int):
-        """
-        Send a brightness command to the mesh and notify via callback.
-
-        Args:
-            target_id: Target device ID
-            brightness: Brightness value (0-255)
-        """
         try:
-            packet = _get_brightness_packet(target_id, brightness)
-            if await self._write_gatt(packet):
-                logger.info(f"mesh: Sent brightness {brightness} to {target_id}")
-                # Notify via callback
-                if self._notification_callback:
-                    await self._notification_callback({"avid": target_id, "brightness": brightness})
+            dest_id, payload = _get_brightness_packet(target_id, brightness)
+            await self._csr.send(dest_id, MODEL_OPCODE, payload)
+            logger.info(f"mesh: Sent brightness {brightness} to {target_id}")
+            if self._notification_callback:
+                await self._notification_callback({"avid": target_id, "brightness": brightness})
         except Exception as e:
             logger.error(f"Error sending brightness command: {e}")
 
     async def send_command(self, command_data: dict):
-        """
-        Send a command to the mesh network.
-
-        Args:
-            command_data: Command dict containing:
-                - device_id: Target device ID
-                - state: "ON" or "OFF"
-                - brightness: Optional brightness (0-255)
-                - color_temp: Optional color temperature
-        """
         try:
             avid: int = command_data.get("avid")  # type: ignore
             command = command_data.get("command")
@@ -423,22 +264,24 @@ class Mesh:
                 await self.read_all()
 
             elif command == "update":
-                payload = json.loads(command_data.get("json"))  # type: ignore
-                if "brightness" in payload:
-                    packet = _get_brightness_packet(avid, payload["brightness"])
-                elif "color_temp" in payload:
-                    packet = _get_color_temp_packet(avid, payload["color_temp"])
-                elif "state" in payload:
-                    packet = _get_brightness_packet(avid, 255 if payload["state"] == "ON" else 0)
+                json_payload = json.loads(command_data.get("json"))  # type: ignore
+                if "brightness" in json_payload:
+                    dest_id, payload = _get_brightness_packet(avid, json_payload["brightness"])
+                elif "color_temp" in json_payload:
+                    dest_id, payload = _get_color_temp_packet(avid, json_payload["color_temp"])
+                elif "state" in json_payload:
+                    dest_id, payload = _get_brightness_packet(
+                        avid, 255 if json_payload["state"] == "ON" else 0
+                    )
                 else:
                     logger.warning("mesh: Unknown payload")
                     return False
 
-                if await self._write_gatt(packet):
-                    logger.info("mesh: Acknowedging directly")
-                    parsed = _parse_command(avid, packet)
-                    if self._notification_callback and parsed:
-                        await self._notification_callback(parsed)
+                await self._csr.send(dest_id, MODEL_OPCODE, payload)
+                logger.info("mesh: Acknowedging directly")
+                parsed = _parse_data(avid, payload)
+                if self._notification_callback and parsed:
+                    await self._notification_callback(parsed)
 
             logger.debug(f"Sent command to device {avid}: {command_data}")
 

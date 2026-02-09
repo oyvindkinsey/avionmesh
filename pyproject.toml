@@ -37,7 +37,7 @@ classifiers = [
 dependencies = [
     "aiorun>=2022.11.1",
     "bleak>=0.21.0",
-    "pycryptodomex>=3.23.0",
+    "recsrmesh",
 ]
 
 [project.optional-dependencies]
@@ -190,9 +190,7 @@ warn_unused_ignores = true
 warn_no_return = true
 check_untyped_defs = true
 strict_equality = true
-exclude = [
-    'csrmeshcrypto\.py$',
-]
+exclude = []
 follow_imports = "silent"
 
 [[tool.mypy.overrides]]

@@ -5,6 +5,7 @@ from typing import Optional
 
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
+from recsrmesh import CSRMesh
 
 from .Mesh import Mesh
 
@@ -93,12 +94,13 @@ async def mesh_handler(  # noqa: C901
                 continue
 
             # Successfully connected, create mesh and handle communication
-            mesh = Mesh(ble_client, passphrase)
+            async with CSRMesh(ble_client, passphrase) as csr:
+                mesh = Mesh(csr)
 
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(mesh_status_listener(mesh, status_queue))
-                tg.create_task(mesh_command_processor(mesh, command_queue))
-                tg.create_task(mesh_set_network_time(mesh))
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(mesh_status_listener(mesh, status_queue))
+                    tg.create_task(mesh_command_processor(mesh, command_queue))
+                    tg.create_task(mesh_set_network_time(mesh))
 
         except asyncio.TimeoutError:
             logger.warning("BLE operation timed out")
