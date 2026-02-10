@@ -2,9 +2,10 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
 from recsrmesh import CSRMesh
 from recsrmesh.mcp import MODEL_OPCODE
@@ -88,7 +89,7 @@ class Noun(Enum):
     NONE = 255
 
 
-def _parse_data(target_id: int, data: bytes) -> Optional[dict]:
+def _parse_data(target_id: int, data: bytes) -> dict | None:
     logger.info(f"mesh: parsing data {data!r} from {target_id}")
 
     if data[0] == 0 and data[1] == 0:
@@ -178,7 +179,7 @@ def apply_overrides_from_settings(settings: dict):
 class Mesh:
     def __init__(self, csr: CSRMesh) -> None:
         self._csr = csr
-        self._notification_callback: Optional[Callable] = None
+        self._notification_callback: Callable | None = None
         # target_id -> (brightness, timestamp)
         self._dimming_commands: dict[int, tuple[int, float]] = {}
 
@@ -219,7 +220,7 @@ class Mesh:
         if self._notification_callback:
             asyncio.create_task(self._notification_callback(parsed))
 
-    def _check_rapid_dimming(self, target_id: int, brightness: int) -> Optional[int]:
+    def _check_rapid_dimming(self, target_id: int, brightness: int) -> int | None:
         current_time = time.time()
 
         if target_id in self._dimming_commands:

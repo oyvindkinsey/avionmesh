@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
@@ -46,8 +45,8 @@ async def mesh_handler(  # noqa: C901
 ):
     """Handle BLE mesh connection with automatic reconnection."""
     while True:
-        ble_client: Optional[BleakClient] = None
-        connected_mac: Optional[str] = None
+        ble_client: BleakClient | None = None
+        connected_mac: str | None = None
 
         try:
             logger.info("Scanning for BLE devices")
@@ -78,7 +77,7 @@ async def mesh_handler(  # noqa: C901
                     logger.info(f"Connected to BLE device {mac}")
                     break
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(f"Timeout connecting to {mac}")
                     if ble_client and ble_client.is_connected:
                         await ble_client.disconnect()
@@ -102,7 +101,7 @@ async def mesh_handler(  # noqa: C901
                     tg.create_task(mesh_command_processor(mesh, command_queue))
                     tg.create_task(mesh_set_network_time(mesh))
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("BLE operation timed out")
         except BleakError as e:
             logger.warning(f"BLE error: {e}")

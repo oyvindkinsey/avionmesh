@@ -41,16 +41,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cloud = [
+    "avionhttp",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
-    "black>=23.7.0",
-    "isort>=5.12.0",
-    "flake8>=6.1.0",
+    "ruff>=0.1.0",
     "mypy>=1.5.0",
-    "pre-commit>=3.3.0",
 ]
 test = [
     "pytest>=7.4.0",
@@ -60,6 +60,7 @@ test = [
 ]
 
 [project.scripts]
+mesh-tui = "avionmesh.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/oyvindkinsey/avionmesh"
@@ -78,41 +79,6 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["avionmesh*"]
 exclude = ["tests*"]
-
-# ============================================================================
-# Black - Code formatter
-# ============================================================================
-[tool.black]
-line-length = 100
-target-version = ['py311', 'py312']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-# ============================================================================
-# isort - Import sorting (compatible with Black)
-# ============================================================================
-[tool.isort]
-profile = "black"
-line_length = 100
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-skip_gitignore = true
-skip = [".gitignore", ".venv", "venv", "build", "dist"]
 
 # ============================================================================
 # pytest - Testing framework
@@ -198,18 +164,7 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 # ============================================================================
-# Flake8 configuration (in setup.cfg or .flake8 file)
-# Note: flake8 doesn't support pyproject.toml yet
-# ============================================================================
-# Create a separate .flake8 file with:
-# [flake8]
-# max-line-length = 100
-# extend-ignore = E203, E266, E501, W503
-# exclude = .git,__pycache__,build,dist,.venv,venv
-# max-complexity = 10
-
-# ============================================================================
-# Ruff - Fast Python linter (alternative to flake8)
+# Ruff - Linter and formatter
 # ============================================================================
 [tool.ruff]
 line-length = 100
@@ -226,7 +181,7 @@ select = [
     "UP",  # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
+    "E501",  # line too long
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
 ]
