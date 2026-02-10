@@ -284,9 +284,6 @@ async def action_import_cloud(db: dict) -> dict:
     if not HAS_AVIONHTTP:
         print("Cloud features require avionhttp.  Install with: pip install avionhttp")
         return db
-    if not db["passphrase"]:
-        print("Set passphrase first (option 1).")
-        return db
     email = (await ainput("Avi-on email: ")).strip()
     password = (await ainput("Avi-on password: ")).strip()
     if not email or not password:
@@ -297,14 +294,24 @@ async def action_import_cloud(db: dict) -> dict:
     print("Fetching from Avi-on cloud...")
     auth_token = await _cloud_auth(email, password)
 
-    # Find location matching our passphrase
+    # Find location matching our passphrase, or import the first one if not set
     response = await http_make_request(host, "user/locations", auth_token=auth_token)
     location_pid = None
-    for raw_loc in response["locations"]:
+    if not db["passphrase"] and response["locations"]:
+        # Import passphrase from first location
+        raw_loc = response["locations"][0]
         loc = await http_make_request(host, f"locations/{raw_loc['pid']}", auth_token=auth_token)
-        if loc["location"]["passphrase"] == db["passphrase"]:
-            location_pid = raw_loc["pid"]
-            break
+        db["passphrase"] = loc["location"]["passphrase"]
+        location_pid = raw_loc["pid"]
+        print(f"Imported passphrase from location: {loc['location'].get('name', '(unnamed)')}")
+    else:
+        for raw_loc in response["locations"]:
+            loc = await http_make_request(
+                host, f"locations/{raw_loc['pid']}", auth_token=auth_token
+            )
+            if loc["location"]["passphrase"] == db["passphrase"]:
+                location_pid = raw_loc["pid"]
+                break
     if not location_pid:
         print("No location matching current passphrase found.")
         return db
