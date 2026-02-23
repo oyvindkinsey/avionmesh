@@ -18,6 +18,10 @@ This should support any devices that uses Avi-on's technology, including Halo Ho
 - supports sending date/time updates to the mesh
 - supports polling for the state of the mesh
 
+## dependencies
+
+- [recsrmesh](https://github.com/oyvindkinsey/recsrmesh) — reverse-engineered CSRMesh BLE protocol library that handles encryption, packet framing, association, and BLE transport
+
 ## acknowledgements
 
 This project would not have been possible without the original work done in <https://github.com/nkaminski/csrmesh> and <https://github.com/nayaverdier/halohome>
