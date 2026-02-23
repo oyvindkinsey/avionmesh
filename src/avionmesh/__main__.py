@@ -1169,6 +1169,103 @@ def _fw_status_label(device: dict, latest: dict[str, str]) -> str:
     return "up to date"
 
 
+async def action_repair_group_memberships(db: dict, conn: BLEConnection) -> dict:
+    if not db["passphrase"]:
+        print("Set passphrase first (option 1).")
+        return db
+    if not db["devices"]:
+        print("No devices in database.")
+        return db
+
+    csr, _ = await conn.ensure_connected(db["passphrase"])
+
+    print("\nScanning group memberships from all devices...\n")
+    device_memberships: dict[int, list[int]] = {}
+    for dev in db["devices"]:
+        avid = dev["device_id"]
+        print(f"  {dev['name']} (id={avid})...", end=" ", flush=True)
+        try:
+            group_ids = await read_device_groups(csr, avid)
+        except (BleakError, RuntimeError, TimeoutError) as e:
+            print(f"ERROR: {e}")
+            continue
+        device_memberships[avid] = group_ids
+        labels = []
+        for gid in group_ids:
+            g = find_group(db, gid)
+            labels.append(str(gid) + (f' "{g["name"]}"' if g else " (unknown)"))
+        print(", ".join(labels) if labels else "(none)")
+
+    # Build group → [device_ids] map from scan results
+    group_members: dict[int, list[int]] = {}
+    for avid, gids in device_memberships.items():
+        for gid in gids:
+            group_members.setdefault(gid, []).append(avid)
+
+    known_ids = {g["group_id"] for g in db["groups"]}
+    all_referenced = set(group_members.keys())
+    missing_groups = all_referenced - known_ids
+    orphaned_groups = known_ids - all_referenced
+
+    # Show full membership picture
+    print("\n=== Group membership (from mesh) ===\n")
+    for gid in sorted(all_referenced):
+        g = find_group(db, gid)
+        name = g["name"] if g else "(not in DB)"
+        members = group_members[gid]
+        member_names = [
+            next((d["name"] for d in db["devices"] if d["device_id"] == did), str(did))
+            for did in sorted(members)
+        ]
+        marker = " [MISSING FROM DB]" if gid in missing_groups else ""
+        print(f'  Group {gid} "{name}"{marker}: {", ".join(member_names)}')
+
+    changed = False
+
+    # Update device records to reflect actual memberships
+    for dev in db["devices"]:
+        avid = dev["device_id"]
+        if avid in device_memberships:
+            dev["groups"] = sorted(device_memberships[avid])
+
+    # Add groups found on mesh but absent from DB
+    if missing_groups:
+        print(
+            f"\n{len(missing_groups)} group(s) found on mesh but not in database — adding with placeholder names."
+        )
+        for gid in sorted(missing_groups):
+            upsert_group(db, {"group_id": gid, "name": f"Group {gid}"})
+        print("  Use 'Manage groups' to rename.")
+        changed = True
+    else:
+        print("\nNo missing groups.")
+
+    # Offer to remove groups that no device belongs to
+    if orphaned_groups:
+        print(f"\n{len(orphaned_groups)} group(s) in database with no device members:")
+        for gid in sorted(orphaned_groups):
+            g = find_group(db, gid)
+            print(f'  Group {gid} "{g["name"] if g else "?"}"')
+        confirm = (await ainput("Remove orphaned groups from database? (y/N): ")).strip().lower()
+        if confirm == "y":
+            for gid in orphaned_groups:
+                remove_group(db, gid)
+            print(f"Removed {len(orphaned_groups)} orphaned group(s).")
+            changed = True
+    else:
+        print("No orphaned groups.")
+
+    # Always save if we updated device membership records
+    if device_memberships:
+        changed = True
+
+    if changed:
+        save_db(db)
+        print("\nDatabase saved.")
+
+    return db
+
+
 async def action_firmware_status(db: dict, conn: BLEConnection) -> dict:
     while True:
         print("\n=== Firmware Status ===\n")
@@ -1329,7 +1426,8 @@ async def main_menu() -> None:
 5. Manage groups
 6. Firmware status
 7. Discover mesh devices
-8. Quit""")
+8. Repair group memberships
+9. Quit""")
 
             choice = (await ainput("> ")).strip()
             try:
@@ -1348,6 +1446,8 @@ async def main_menu() -> None:
                 elif choice == "7":
                     db = await action_discover_mesh(db, conn)
                 elif choice == "8":
+                    db = await action_repair_group_memberships(db, conn)
+                elif choice == "9":
                     break
             except (BleakError, RuntimeError, TimeoutError) as e:
                 print(f"Error: {e}")
